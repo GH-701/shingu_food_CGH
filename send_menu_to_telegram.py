@@ -1,3 +1,4 @@
+import os
 import urllib.request
 import json
 from datetime import datetime
@@ -5,8 +6,9 @@ from datetime import datetime
 # -----------------------------------------------------------------------------
 # 설정 / Configuration
 # -----------------------------------------------------------------------------
-TELEGRAM_BOT_TOKEN = '8292351740:AAGv71z1VveMHpnNwNXvgx1uBWJOF8EcaH0'
-TELEGRAM_CHAT_ID = '8419206166'
+# GitHub Actions의 환경변수(Secrets)를 먼저 확인하고, 없으면 직접 입력한 값을 사용합니다.
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8292351740:AAGv71z1VveMHpnNwNXvgx1uBWJOF8EcaH0')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '8419206166')
 
 def get_today_menu():
     """스크래핑한 오늘자 식단 데이터를 반환합니다."""
