@@ -24,11 +24,12 @@ def fetch_api_data(bistro_seq, start_day, end_day):
     data = urllib.parse.urlencode(params).encode('utf-8')
     req = urllib.request.Request(api_url, data=data, method='POST')
     
-    # 브라우저처럼 보이게 하기 위해 헤더 추가
     req.add_header('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
     req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36')
     
+    # 강력한 SSL 호환성 설정 (오래된 서버 접속용)
     context = ssl._create_unverified_context()
+    context.set_ciphers('DEFAULT@SECLEVEL=1') # 보안 수준을 하향 조정하여 접속 허용
     
     try:
         with urllib.request.urlopen(req, context=context) as response:
@@ -60,6 +61,8 @@ def get_today_menu():
     for item in data_west:
         if item.get("BISTRO_DT") == target_dt:
             content = item.get("DIET_CONTENT", "").replace("\r\n", ", ").strip()
+            if not content: continue
+            
             div_nm = item.get("BISTRO_DIV_NM", "")
             if "조식" in div_nm: menu_info["west"]["breakfast"] = content
             elif "한식" in div_nm: menu_info["west"]["lunch_k"] = content
@@ -71,6 +74,8 @@ def get_today_menu():
     for item in data_mirae:
         if item.get("BISTRO_DT") == target_dt:
             content = item.get("DIET_CONTENT", "").replace("\r\n", ", ").strip()
+            if not content: continue
+            
             div_nm = item.get("BISTRO_DIV_NM", "")
             if "조식" in div_nm: menu_info["mirae"]["breakfast"] = content
             elif "분식" in div_nm: menu_info["mirae"]["snack"] = content
@@ -107,8 +112,11 @@ def send_to_telegram(text):
     except: return False
 
 if __name__ == "__main__":
+    print("📋 신구대학교 식단 정보를 가져오는 중...")
     menu = get_today_menu()
     formatted_text = format_message(menu)
+    
+    print("🚀 텔레그램으로 전송 시도 중...")
     if send_to_telegram(formatted_text):
         print("✅ 오늘의 식단 전송 완료!")
     else:
