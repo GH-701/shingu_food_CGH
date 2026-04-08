@@ -1,8 +1,6 @@
 import os
-import urllib.request
-import urllib.parse
 import json
-import ssl
+import subprocess
 from datetime import datetime, timedelta
 
 # -----------------------------------------------------------------------------
@@ -11,113 +9,118 @@ from datetime import datetime, timedelta
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8292351740:AAGv71z1VveMHpnNwNXvgx1uBWJOF8EcaH0')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '8419206166')
 
-def fetch_api_data(bistro_seq, start_day, end_day):
-    """신구대학교 API에서 데이터를 가져옵니다."""
+def fetch_menu_data_using_curl(bistro_seq):
+    """시스템의 curl 명령어를 사용하여 데이터를 가져옵니다."""
     api_url = "https://www.shingu.ac.kr/ajaxf/FR_BST_SVC/BistroCarteInfo.do"
-    params = {
-        "pageNo": "1",
-        "MENU_ID": "1630",
-        "START_DAY": start_day,
-        "END_DAY": end_day,
-        "BISTRO_SEQ": bistro_seq
-    }
-    data = urllib.parse.urlencode(params).encode('utf-8')
-    req = urllib.request.Request(api_url, data=data, method='POST')
-    
-    req.add_header('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
-    req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36')
-    
-    # 강력한 SSL 호환성 설정 (오래된 서버 접속용)
-    context = ssl._create_unverified_context()
-    context.set_ciphers('DEFAULT@SECLEVEL=1') # 보안 수준을 하향 조정하여 접속 허용
-    
-    try:
-        with urllib.request.urlopen(req, context=context) as response:
-            return json.loads(response.read().decode())
-    except Exception as e:
-        print(f"API 호출 오류 (BISTRO_SEQ={bistro_seq}): {e}")
-        return []
-
-def get_today_menu():
-    """오늘의 식단을 크롤링합니다."""
     today = datetime.now()
-    # today = datetime(2026, 4, 8) # 테스트용
-    
     monday = today - timedelta(days=today.weekday())
     friday = monday + timedelta(days=4)
     start_day = monday.strftime("%Y.%m.%d")
     end_day = friday.strftime("%Y.%m.%d")
+    
+    post_data = f"pageNo=1&MENU_ID=1630&BISTRO_SEQ={bistro_seq}&START_DAY={start_day}&END_DAY={end_day}"
+    
+    cmd = [
+        "curl", "-s", "-X", "POST", 
+        "-d", post_data,
+        "-H", "Content-Type: application/x-www-form-urlencoded; charset=UTF-8",
+        "-H", "Origin: https://www.shingu.ac.kr",
+        "-H", "Referer: https://www.shingu.ac.kr/cms/FR_CON/index.do?MENU_ID=1630",
+        "-H", "User-Agent: Mozilla/5.0",
+        "-k", 
+        api_url
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, check=True)
+        raw_output = result.stdout.decode('utf-8', errors='ignore')
+        if not raw_output.strip(): return []
+        
+        data = json.loads(raw_output)
+        # 중요: 신구대 API는 {"data": [...]} 형식으로 응답함
+        if isinstance(data, dict) and "data" in data:
+            return data["data"]
+        return []
+    except Exception as e:
+        print(f"API 호출 오류 (SEQ={bistro_seq}): {e}")
+        return []
+
+def parse_west_lunch(content):
+    """서관 중식 데이터(한식+양식) 파싱"""
+    k, w = "정보없음", "정보없음"
+    content = content.replace("**", "").replace('"', '').strip()
+    if "한식" in content and "양식" in content:
+        parts = content.split("양식")
+        k = parts[0].replace("한식", "").strip(", ").strip()
+        w = parts[1].strip(", ").strip()
+    elif "한식" in content:
+        k = content.replace("한식", "").strip()
+    elif "양식" in content:
+        w = content.replace("양식", "").strip()
+    else:
+        k = content
+    return k, w
+
+def get_today_menu():
+    today = datetime.now()
     target_dt = today.strftime("%Y%m%d")
     weekday_str = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][today.weekday()]
     
-    menu_info = {
+    menu = {
         "date": f"{today.year}년 {today.month}월 {today.day}일 ({weekday_str})",
-        "west": {"breakfast": "정보 없음", "lunch_k": "정보 없음", "lunch_w": "정보 없음", "snack": "정보 없음"},
-        "mirae": {"breakfast": "정보 없음", "lunch": "정보 없음", "snack": "정보 없음"}
+        "west": {"조식": "정보없음", "한식": "정보없음", "양식": "정보없음", "분식": "정보없음"},
+        "mirae": {"조식": "정보없음", "중식": "정보없음", "분식": "정보없음"}
     }
 
-    # 1. 서관 (SEQ=7)
-    data_west = fetch_api_data("7", start_day, end_day)
-    for item in data_west:
-        if item.get("BISTRO_DT") == target_dt:
-            content = item.get("DIET_CONTENT", "").replace("\r\n", ", ").strip()
-            if not content: continue
-            
-            div_nm = item.get("BISTRO_DIV_NM", "")
-            if "조식" in div_nm: menu_info["west"]["breakfast"] = content
-            elif "한식" in div_nm: menu_info["west"]["lunch_k"] = content
-            elif "양식" in div_nm: menu_info["west"]["lunch_w"] = content
-            elif "분식" in div_nm: menu_info["west"]["snack"] = content
+    # 1. 서관 (7)
+    items_west = fetch_menu_data_using_curl("7")
+    for item in items_west:
+        if item.get("STD_DT") == target_dt:
+            menu["west"]["조식"] = item.get("CARTE1_CONT", "정보없음").replace("\r\n", " ").strip()
+            k, w = parse_west_lunch(item.get("CARTE2_CONT", ""))
+            menu["west"]["한식"] = k
+            menu["west"]["양식"] = w
+            menu["west"]["분식"] = item.get("CARTE3_CONT", "정보없음").replace("\r\n", " ").strip()
 
-    # 2. 미래창의관 (SEQ=5)
-    data_mirae = fetch_api_data("5", start_day, end_day)
-    for item in data_mirae:
-        if item.get("BISTRO_DT") == target_dt:
-            content = item.get("DIET_CONTENT", "").replace("\r\n", ", ").strip()
-            if not content: continue
-            
-            div_nm = item.get("BISTRO_DIV_NM", "")
-            if "조식" in div_nm: menu_info["mirae"]["breakfast"] = content
-            elif "분식" in div_nm: menu_info["mirae"]["snack"] = content
-            else: menu_info["mirae"]["lunch"] = content # 보통 중식
+    # 2. 미래창의관 (5)
+    items_mirae = fetch_menu_data_using_curl("5")
+    for item in items_mirae:
+        if item.get("STD_DT") == target_dt:
+            menu["mirae"]["조식"] = item.get("CARTE1_CONT", "정보없음").replace("\r\n", " ").strip()
+            menu["mirae"]["중식"] = item.get("CARTE2_CONT", "정보없음").replace("\r\n", " ").strip()
+            menu["mirae"]["분식"] = item.get("CARTE3_CONT", "정보없음").replace("\r\n", " ").strip()
 
-    return menu_info
-
-def format_message(menu):
-    """메시지 포맷팅"""
-    msg = f"🏫 *신구대학교 오늘의 식단*\n📅 {menu['date']}\n\n"
-    
-    msg += "📍 *학생식당 (서관)*\n"
-    msg += f"• 조식: {menu['west']['breakfast']}\n"
-    msg += f"• 중식(한식): {menu['west']['lunch_k']}\n"
-    msg += f"• 중식(양식): {menu['west']['lunch_w']}\n"
-    msg += f"• 분식: {menu['west']['snack']}\n\n"
-    
-    msg += "📍 *학생식당 (미래창의관)*\n"
-    msg += f"• 조식: {menu['mirae']['breakfast']}\n"
-    msg += f"• 중식: {menu['mirae']['lunch']}\n"
-    msg += f"• 분식: {menu['mirae']['snack']}\n\n"
-    
-    msg += "맛있게 드세요! 😋"
-    return msg
+    return menu
 
 def send_to_telegram(text):
+    import urllib.request
+    import ssl
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
-    data_json = json.dumps(data).encode('utf-8')
-    req = urllib.request.Request(url, data=data_json, headers={'Content-Type': 'application/json'})
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    context = ssl._create_unverified_context()
     try:
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, context=context) as response:
             return json.loads(response.read().decode()).get("ok", False)
     except: return False
 
 if __name__ == "__main__":
-    print("📋 신구대학교 식단 정보를 가져오는 중...")
     menu = get_today_menu()
-    formatted_text = format_message(menu)
     
-    print("🚀 텔레그램으로 전송 시도 중...")
-    if send_to_telegram(formatted_text):
-        print("✅ 오늘의 식단 전송 완료!")
+    msg = f"🏫 *신구대학교 오늘의 식단*\n📅 {menu['date']}\n\n"
+    msg += "📍 *학생식당 (서관)*\n"
+    msg += f"• 조식: {menu['west']['조식']}\n"
+    msg += f"• 중식(한식): {menu['west']['한식']}\n"
+    msg += f"• 중식(양식): {menu['west']['양식']}\n"
+    msg += f"• 분식: {menu['west']['분식']}\n\n"
+    msg += "📍 *학생식당 (미래창의관)*\n"
+    msg += f"• 조식: {menu['mirae']['조식']}\n"
+    msg += f"• 중식: {menu['mirae']['중식']}\n"
+    msg += f"• 분식: {menu['mirae']['분식']}\n\n"
+    msg += "맛있게 드세요! 😋"
+
+    if send_to_telegram(msg):
+        print(f"✅ 전송 완료!\n{msg}")
     else:
         print("❌ 전송 실패")
