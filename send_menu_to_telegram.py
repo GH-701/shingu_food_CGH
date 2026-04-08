@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 # -----------------------------------------------------------------------------
 # 설정 / Configuration
 # -----------------------------------------------------------------------------
-# GitHub Actions용 환경변수와 로컬용 기본값을 모두 포함했습니다.
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8292351740:AAGv71z1VveMHpnNwNXvgx1uBWJOF8EcaH0')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '8419206166')
 
@@ -25,9 +24,7 @@ def fetch_menu_data_using_curl(bistro_seq):
         "curl", "-s", "-X", "POST", 
         "-d", post_data,
         "-H", "Content-Type: application/x-www-form-urlencoded; charset=UTF-8",
-        "-H", "Origin: https://www.shingu.ac.kr",
-        "-H", "Referer: https://www.shingu.ac.kr/cms/FR_CON/index.do?MENU_ID=1630",
-        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "-H", "User-Agent: Mozilla/5.0",
         "-k", 
         api_url
     ]
@@ -38,17 +35,23 @@ def fetch_menu_data_using_curl(bistro_seq):
         if not raw_output.strip(): return []
         
         data = json.loads(raw_output)
-        # 중요: 신구대 API 응답 형식 {"data": [...]} 연동
+        # 응답이 {"data": [...]} 또는 [...] 인 경우 모두 대응
+        items = []
         if isinstance(data, dict) and "data" in data:
-            return data["data"]
-        return data if isinstance(data, list) else []
+            items = data["data"]
+        elif isinstance(data, list):
+            items = data
+            
+        print(f"📡 SEO(SEQ={bistro_seq}): {len(items)}개의 식단 데이터 수집 성공")
+        return items
     except Exception as e:
-        print(f"API 호출 오류 (SEQ={bistro_seq}): {e}")
+        print(f"⚠️ API 호출 오류 (SEQ={bistro_seq}): {e}")
         return []
 
 def parse_west_lunch(content):
     """서관 중식(한식/양식)을 텍스트 분석해서 나눕니다."""
     k, w = "정보없음", "정보없음"
+    if not content: return k, w
     content = content.replace("**", "").replace('"', '').strip()
     if "한식" in content and "양식" in content:
         parts = content.split("양식")
@@ -64,6 +67,7 @@ def parse_west_lunch(content):
 
 def get_today_menu():
     today = datetime.now()
+    # today = datetime(2026, 4, 8) # 테스트 시 날짜 고정
     target_dt = today.strftime("%Y%m%d")
     weekday_str = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][today.weekday()]
     
@@ -73,7 +77,7 @@ def get_today_menu():
         "mirae": {"조식": "정보없음", "중식": "정보없음", "분식": "정보없음"}
     }
 
-    # 서관 식단 수집
+    # 서관 수집
     west_items = fetch_menu_data_using_curl("7")
     for item in west_items:
         if item.get("STD_DT") == target_dt:
@@ -83,7 +87,7 @@ def get_today_menu():
             res["west"]["양식"] = w
             res["west"]["분식"] = item.get("CARTE3_CONT", "정보없음").replace("\r\n", " ").strip(", ")
 
-    # 미래창의관 식단 수집
+    # 미래창의관 수집
     mirae_items = fetch_menu_data_using_curl("5")
     for item in mirae_items:
         if item.get("STD_DT") == target_dt:
@@ -103,29 +107,38 @@ def send_to_telegram(text):
     context = ssl._create_unverified_context()
     try:
         with urllib.request.urlopen(req, context=context) as response:
-            return json.loads(response.read().decode()).get("ok", False)
-    except: return False
+            result = json.loads(response.read().decode())
+            if result.get("ok"):
+                return True
+            else:
+                print(f"❌ 텔레그램 서버 응답 오류: {result}")
+                return False
+    except Exception as e:
+        print(f"❌ 텔레그램 전송 중 예외 발생: {e}")
+        return False
 
 if __name__ == "__main__":
-    print("-" * 30)
-    print("🍱 신구대학교 자동 식단 수집 봇 가동")
-    print("-" * 30)
+    print("-" * 50)
+    print("🚀 신구대학교 자동 식단 수집 봇 시작")
+    print("-" * 50)
     
     current_menu = get_today_menu()
     
     msg_body = f"🏫 *신구대학교 오늘의 식단*\n📅 {current_menu['date']}\n\n"
-    msg_body += "📍 *학생식당 (서관/7)*\n"
+    msg_body += "📍 *학생식당 (서관)*\n"
     msg_body += f"• 조식: {current_menu['west']['조식']}\n"
     msg_body += f"• 중식(한식): {current_menu['west']['한식']}\n"
     msg_body += f"• 중식(양식): {current_menu['west']['양식']}\n"
     msg_body += f"• 분식: {current_menu['west']['분식']}\n\n"
-    msg_body += "📍 *학생식당 (미래창의관/5)*\n"
+    msg_body += "📍 *학생식당 (미래창의관)*\n"
     msg_body += f"• 조식: {current_menu['mirae']['조식']}\n"
     msg_body += f"• 중식: {current_menu['mirae']['중식']}\n"
     msg_body += f"• 분식: {current_menu['mirae']['분식']}\n\n"
-    msg_body += "오늘도 든든하게 맛있게 드세요! 😋"
+    msg_body += "맛있게 드세요! 😋"
 
+    print("📢 텔레그램 전송 시도 중...")
     if send_to_telegram(msg_body):
-        print("✅ 오늘의 식단 전송 완벽 성공!")
+        print(f"✅ 전송 성골! (일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
     else:
-        print("❌ 전송 오류 (네트워크를 확인하세요)")
+        print("❌ 전송 실패 (위 오류 메시지를 확인하세요)")
+    print("-" * 50)
