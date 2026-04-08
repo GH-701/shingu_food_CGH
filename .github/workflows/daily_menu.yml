@@ -30,4 +30,4 @@ jobs:
           # GitHub Secrets에 등록한 값을 환경변수로 연결합니다.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python send_menu_to_telegram.py
+        run: python menu_crawler.py
