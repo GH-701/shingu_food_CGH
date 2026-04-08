@@ -34,10 +34,7 @@ def test_telegram_bot():
                 print("✅ 결과: 메시지 전송 성공!")
                 print(f"   (받는 사람 ID: {TELEGRAM_CHAT_ID})")
             else:
-                desc = result.get("description", "알 수 없는 오류")
-                print(f"❌ 결과: 실패 - {desc}")
-                print(f"   서버 응답: {result}")
-                print(f"   URL: {url[:30]}...") # 토큰 일부 가림
+                print("❌ 결과: 실패 - " + result.get("description", "알 수 없는 오류"))
                 
     except Exception as e:
         print(f"💥 오류 발생: {e}")
