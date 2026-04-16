@@ -58,31 +58,40 @@ def get_kst_now():
     """한국 시간(KST) 현재 시간 반환 (GitHub Actions 대응)"""
     return datetime.datetime.utcnow() + datetime.timedelta(hours=9)
 
+import html
+
 def send_telegram_message(message):
     """텔레그램 메시지 전송"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[오류] 텔레그램 토큰 또는 채팅 ID가 설정되지 않았습니다.")
-        print("-" * 30)
-        print(message)
-        print("-" * 30)
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
         'text': message,
-        'parse_mode': 'HTML' # 마크다운 대신 HTML 모드 사용하여 특수문자 충돌 방지
+        'parse_mode': 'HTML'
     }
     
     try:
         response = requests.post(url, json=payload, timeout=10)
+        if response.status_code != 200:
+            print(f"❌ 텔레그램 전송 실패 (상태 코드: {response.status_code})")
+            print(f"응답 내용: {response.text}")
+            # HTML 모드 오류일 경우 일반 텍스트로 재시도
+            if "can't parse entities" in response.text:
+                print("🔄 HTML 파싱 오류로 인해 일반 텍스트 모드로 재시도합니다...")
+                payload.pop('parse_mode')
+                response = requests.post(url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    print("✅ 일반 텍스트로 전환하여 전송 성공")
+                    return
+        
         response.raise_for_status()
         print("✅ 텔레그램 메시지 전송 성공")
     except Exception as e:
-        print(f"❌ 텔레그램 메시지 전송 실패: {e}")
-        # 상세 응답 내용 출력 (디버깅용)
-        if hasattr(e, 'response') and e.response:
-            print(f"상세 응답: {e.response.text}")
+        print(f"💥 텔레그램 통신 중 치명적 오류 발생: {e}")
 
 def get_menu_data(seq):
     """API를 통해 특정 식당의 주간 식단 데이터를 가져옴"""
@@ -151,11 +160,14 @@ def main():
                     nm = (todays_item.get(f'CARTE{i}_NM') or '').strip()
                     cont = (todays_item.get(f'CARTE{i}_CONT') or '').strip()
                     if nm or cont:
-                        if nm: message_lines.append(f"<b>[{nm}]</b>")
+                        if nm: 
+                            safe_nm = html.escape(nm)
+                            message_lines.append(f"<b>[{safe_nm}]</b>")
                         if cont:
                             # 특수문자 HTML 엔티티 처리 및 줄바꿈 정리
                             clean_cont = cont.replace('\r\n', '\n').replace('\n', ', ').strip(', ')
-                            message_lines.append(f"{clean_cont}")
+                            safe_cont = html.escape(clean_cont)
+                            message_lines.append(f"{safe_cont}")
                         message_lines.append("")
                 
                 if message_lines:
