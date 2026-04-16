@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 # -----------------------------------------------------------------------------
 # 설정 / Configuration
 # -----------------------------------------------------------------------------
-TELEGRAM_BOT_TOKEN = '8292351740:AAGv71z1VveMHpnNwNXvgx1uBWJOF8EcaH0'
-TELEGRAM_CHAT_ID = '8419206166'
+TELEGRAM_BOT_TOKEN = '8217138523:AAEMf_f9j5Imr91HVFTSgtaXled1tHdo-9Y'
+TELEGRAM_CHAT_ID = '8330266163'
 
 # 서버에서 가져온 식단 데이터 (크롤링 결과 캐싱)
 MENU_DATA = {

@@ -1,12 +1,20 @@
 import urllib.request
 import json
+import sys
+
+# Windows 터미널 한글/이모지 깨짐 방지
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
 
 # -----------------------------------------------------------------------------
 # 설정 / Configuration
 # -----------------------------------------------------------------------------
 # 파일에서 확인된 정보를 바탕으로 설정합니다
-TELEGRAM_BOT_TOKEN = '8292351740:AAGv71z1VveMHpnNwNXvgx1uBWJOF8EcaH0'
-TELEGRAM_CHAT_ID = '8419206166'
+TELEGRAM_BOT_TOKEN = '8217138523:AAEMf_f9j5Imr91HVFTSgtaXled1tHdo-9Y'
+TELEGRAM_CHAT_ID = '8330266163'
 
 def test_telegram_bot():
     """텔레그램 봇 연동 테스트를 수행합니다."""
